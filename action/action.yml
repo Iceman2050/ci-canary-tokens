@@ -1,0 +1,35 @@
+name: "ci-canary-tokens tripwire"
+description: >
+  Honeytoken tripwire for CI/CD pipelines. Scans a provided text blob or log
+  file for registered canary prefixes and FAILS the build with an alert naming
+  which canary fired and where. By Ingenious AI.
+author: "Ingenious AI"
+
+inputs:
+  registry:
+    description: "Path (in the consuming repo) to the canary registry JSON"
+    required: true
+  scan-path:
+    description: "Path to a file to scan (e.g. a captured workflow log). Mutually exclusive with scan-text."
+    required: false
+    default: ""
+  scan-text:
+    description: "Raw text to scan. Mutually exclusive with scan-path."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run canary tripwire
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.scan-path }}" ]; then
+          python3 "${{ github.action_path }}/tripwire.py" \
+            --registry "${{ inputs.registry }}" \
+            --blob "${{ inputs.scan-path }}"
+        else
+          python3 "${{ github.action_path }}/tripwire.py" \
+            --registry "${{ inputs.registry }}" \
+            --text "${{ inputs.scan-text }}"
+        fi
