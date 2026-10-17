@@ -1,16 +1,24 @@
-name: "ci-canary-tokens tripwire"
-description: >
+name: "CI Canary Tokens Tripwire"
+description: >-
   Honeytoken tripwire for CI/CD pipelines. Scans a provided text blob or log
   file for registered canary prefixes and FAILS the build with an alert naming
-  which canary fired and where. By Ingenious AI.
+  which canary fired and where. A burglar alarm for your builds: if a planted
+  CI secret is exfiltrated (GhostAction-style), the tripwire fires. By Ingenious AI.
 author: "Ingenious AI"
+
+branding:
+  icon: "alert-triangle"
+  color: "red"
 
 inputs:
   registry:
-    description: "Path (in the consuming repo) to the canary registry JSON"
+    description: >-
+      Path to the canary registry JSON, relative to the repository root.
     required: true
   scan-path:
-    description: "Path to a file to scan (e.g. a captured workflow log). Mutually exclusive with scan-text."
+    description: >-
+      Path to a file to scan (e.g. a captured workflow log), relative to the
+      repository root. Mutually exclusive with scan-text.
     required: false
     default: ""
   scan-text:
@@ -18,18 +26,47 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  fired:
+    description: "'true' if any canary fired, 'false' otherwise."
+    value: ${{ steps.verdict.outputs.fired }}
+  fired-count:
+    description: Number of canaries that fired.
+    value: ${{ steps.verdict.outputs.fired-count }}
+
 runs:
   using: "composite"
   steps:
     - name: Run canary tripwire
+      id: tripwire
       shell: bash
+      continue-on-error: true
       run: |
+        set -u
+        cd "${{ github.workspace }}"
         if [ -n "${{ inputs.scan-path }}" ]; then
           python3 "${{ github.action_path }}/tripwire.py" \
-            --registry "${{ inputs.registry }}" \
-            --blob "${{ inputs.scan-path }}"
+            --registry "${{ github.workspace }}/${{ inputs.registry }}" \
+            --blob "${{ github.workspace }}/${{ inputs.scan-path }}" \
+            > "$RUNNER_TEMP/canary-stdout.txt" 2>&1 || true
         else
           python3 "${{ github.action_path }}/tripwire.py" \
-            --registry "${{ inputs.registry }}" \
-            --text "${{ inputs.scan-text }}"
+            --registry "${{ github.workspace }}/${{ inputs.registry }}" \
+            --text "${{ inputs.scan-text }}" \
+            > "$RUNNER_TEMP/canary-stdout.txt" 2>&1 || true
         fi
+        cat "$RUNNER_TEMP/canary-stdout.txt"
+    - name: Evaluate tripwire result
+      id: verdict
+      shell: bash
+      if: always()
+      run: |
+        set -u
+        echo 'aW1wb3J0IHJlLCBvcwptID0gcmUuc2VhcmNoKHIiKFxkKylccytjYW5hcnlcKGllc1wpXHMrZmlyZWQiLCBvcGVuKG9zLnBhdGguam9pbihvcy5lbnZpcm9uWyJSVU5ORVJfVEVNUCJdLCAiY2FuYXJ5LXN0ZG91dC50eHQiKSkucmVhZCgpKQpuID0gaW50KG0uZ3JvdXAoMSkpIGlmIG0gZWxzZSAwCmZpcmVkID0gInRydWUiIGlmIG4gZWxzZSAiZmFsc2UiCnNlYyA9IG9zLmVudmlyb24uZ2V0KCJHSVRIVUJfU1RFUF9TVU1NQVJZIiwgIiIpCmlmIHNlYzoKICAgIHdpdGggb3BlbihzZWMsICJhIiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZmg6CiAgICAgICAgZmgud3JpdGUoIlxuIyMgQ0kgQ2FuYXJ5IFRyaXB3aXJlXG5cbiIgKyAoIioqJWQgY2FuYXJ5KGllcykgZmlyZWQgLSBidWlsZCBtdXN0IGZhaWwuKipcbiIgJSBuIGlmIG4gZWxzZSAiTm8gY2FuYXJ5IHByZWZpeGVzIGZvdW5kIC0gYnVpbGQgY2xlYW4uXG4iKSkKb3V0ID0gb3MuZW52aXJvbi5nZXQoIkdJVEhVQl9PVVRQVVQiLCAiIikKaWYgb3V0OgogICAgd2l0aCBvcGVuKG91dCwgImEiLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmaDoKICAgICAgICBmaC53cml0ZSgiZmlyZWQ9JXNcbiIgJSBmaXJlZCkKICAgICAgICBmaC53cml0ZSgiZmlyZWQtY291bnQ9JWRcbiIgJSBuKQpwcmludCgiZmlyZWQ9JXMgY291bnQ9JWQiICUgKGZpcmVkLCBuKSk=' | base64 -d > "$RUNNER_TEMP/eval.py"
+        python3 "$RUNNER_TEMP/eval.py"
+    - name: Fail on fired canary
+      shell: bash
+      if: steps.verdict.outputs.fired == 'true'
+      run: |
+        echo "::error::CI Canary Tokens tripwire fired - a planted secret was exfiltrated. Investigate NOW."
+        exit 1

@@ -1,5 +1,20 @@
 # ci-canary-tokens
 
+
+## ⚡ GitHub Action
+
+Run it in CI — fails the build when a planted canary secret surfaces in logs:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: Iceman2050/ci-canary-tokens/action@v1
+  with:
+    registry: 'canaries.json'
+    scan-path: 'build.log' # or scan-text: '...'
+```
+
+Full input reference: [`action/action.yml`](./action/action.yml).
+
 **Honeytokens for CI/CD pipelines — a burglar alarm for your builds.**
 
 The October 2026 GhostAction campaign (~1,900 compromised GitHub accounts, 30,000+ repos) worked by exfiltrating repo and org secrets through poisoned workflows. If a canary credential is sitting among your real secrets, the thief steals it too — and the moment it surfaces anywhere outside its vault, the tripwire fires and your build fails with an alert naming exactly which canary leaked.
